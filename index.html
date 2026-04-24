@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ANGEL 24 // СЕКРЕТНО</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/framer-motion@10.18.0/dist/framer-motion.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{overflow:hidden;background:#050505;font-family:'JetBrains Mono',monospace;user-select:none}
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#00FF41}
+    @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}.blink{animation:blink 1s infinite}
+    @keyframes card-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}.card-shake{animation:card-shake 0.45s ease}
+    @keyframes ping-anim{0%{transform:scale(1);opacity:.8}100%{transform:scale(2.8);opacity:0}}.ping{animation:ping-anim 2s ease-out infinite}
+    @keyframes draw-line{from{stroke-dashoffset:2000}to{stroke-dashoffset:0}}.draw{stroke-dasharray:2000;animation:draw-line 1.8s ease forwards}
+    @keyframes crt-f{0%,19%,21%,23%,25%,54%,56%,100%{opacity:.99}20%,24%,55%{opacity:.93}}.crt{animation:crt-f 5s infinite}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const { motion, AnimatePresence, useMotionValue, useTransform, useSpring } = window.Motion;
+
+/* ══════════════════════════════════════════════
+   ЗВУК
+══════════════════════════════════════════════ */
+let _ac = null;
+function aC() { if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)(); return _ac; }
+function tone({freq=440,type='sine',gain=0.15,start=0,dur=0.2,freqEnd}){
+  try{ const c=aC(),o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(c.destination);o.type=type;
+    o.frequency.setValueAtTime(freq,c.currentTime+start);
+    if(freqEnd)o.frequency.linearRampToValueAtTime(freqEnd,c.currentTime+start+dur);
+    g.gain.setValueAtTime(gain,c.currentTime+start);
+    g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+start+dur);
+    o.start(c.currentTime+start);o.stop(c.currentTime+start+dur); }catch{}
+}
+const playClick   = ()=>tone({freq:800,freqEnd:300,type:'square',gain:0.04,dur:0.03});
+const playDenied  = ()=>[0,.18,.36].forEach(s=>tone({freq:180,freqEnd:700,type:'sawtooth',gain:0.22,start:s,dur:0.14}));
+const playGranted = ()=>[523,659,784,1047].forEach((f,i)=>tone({freq:f,type:'sine',gain:0.18,start:i*.1,dur:0.35}));
+const playBeep    = ()=>tone({freq:1200,type:'sine',gain:0.1,dur:0.12});
+const playWrong   = ()=>tone({freq:250,freqEnd:150,type:'sawtooth',gain:0.09,dur:0.25});
+const playPing    = ()=>tone({freq:1000,freqEnd:600,type:'sine',gain:0.12,dur:0.45});
+const playSuccess = ()=>[{f:523,t:0,d:.14},{f:659,t:.11,d:.14},{f:784,t:.22,d:.14},{f:1047,t:.33,d:.6},{f:784,t:.9,d:.12},{f:1047,t:1.0,d:1.0}].forEach(({f,t,d})=>tone({freq:f,type:'square',gain:0.12,start:t,dur:d}));
+const playTick=(last)=>{
+  if(last){[65,130,196].forEach((f,i)=>tone({freq:f,type:'sine',gain:0.32,start:i*0.02,dur:0.75}));tone({freq:1047,type:'sine',gain:0.18,dur:0.18});}
+  else{tone({freq:1800,type:'sine',gain:0.13,dur:0.032});tone({freq:900,freqEnd:550,type:'sine',gain:0.07,start:0.025,dur:0.05});}
+};
+const playReveal=()=>{
+  [261.63,329.63,392,523.25,659.25,783.99,1046.5].forEach((f,i)=>tone({freq:f,type:'sine',gain:0.22,start:i*0.11,dur:0.55}));
+  [261.63,329.63,392,523.25].forEach(f=>tone({freq:f,type:'sine',gain:0.13,start:0.86,dur:3.0}));
+  tone({freq:2093,type:'sine',gain:0.08,start:1.6,dur:2.2});
+};
+
+/* Interstellar ambient BGM */
+let _bgm=false;
+function startBGM(){
+  if(_bgm)return;_bgm=true;
+  try{
+    const ctx=aC();
+    const master=ctx.createGain();
+    master.gain.setValueAtTime(0,ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0.062,ctx.currentTime+9);
+    master.connect(ctx.destination);
+    const b=ctx.createOscillator(),bg=ctx.createGain();
+    b.type='sine';b.frequency.value=65.41;
+    bg.gain.setValueAtTime(0,ctx.currentTime);
+    bg.gain.linearRampToValueAtTime(0.09,ctx.currentTime+9);
+    b.connect(bg);bg.connect(master);b.start(ctx.currentTime);
+    const CHORDS=[[130.81,155.56,196],[103.83,130.81,155.56],[155.56,196,233.08],[116.54,146.83,174.61]];
+    const CD=12;
+    function organ(freqs,t){
+      freqs.forEach(f=>{[1,2,3].forEach((h,i)=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.type='sine';o.frequency.value=f*h;
+        const v=[0.34,0.17,0.08][i]/freqs.length;
+        g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+2.5);
+        g.gain.setValueAtTime(v,t+CD-2);g.gain.linearRampToValueAtTime(0,t+CD+0.6);
+        o.connect(g);g.connect(master);o.start(t);o.stop(t+CD+0.8);
+      });});
+    }
+    let nxt=ctx.currentTime+0.4;
+    function schedule(){
+      CHORDS.forEach((c,i)=>organ(c,nxt+i*CD));
+      nxt+=CHORDS.length*CD;
+      setTimeout(schedule,(CHORDS.length*CD-4)*1000);
+    }
+    schedule();
+  }catch(e){}
+}
+
+const playDecrypt=()=>{
+  [0,.06,.12,.18,.24,.30].forEach((s,i)=>tone({freq:650+i*85,type:'square',gain:0.038,start:s,dur:0.042}));
+  tone({freq:1400,type:'sine',gain:0.13,start:0.46,dur:0.18});
+};
+
+/* ══════════════════════════════════════════════
+   ФОНОВЫЕ ЭФФЕКТЫ (CRT, СКАНЛАЙН, ШУМ)
+══════════════════════════════════════════════ */
+function GlobalEffects({glitching}){
+  return(
+    <>
+      <div className="fixed inset-0 pointer-events-none z-50"
+        style={{backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.11) 2px,rgba(0,0,0,.11) 4px)'}}/>
+      <motion.div className="fixed left-0 right-0 pointer-events-none z-50"
+        style={{height:'5px',background:'linear-gradient(to bottom,transparent,rgba(0,255,65,.07) 50%,transparent)',boxShadow:'0 0 14px rgba(0,255,65,.1)'}}
+        animate={{top:['-1%','102%']}} transition={{duration:9,repeat:Infinity,ease:'linear'}}/>
+      <svg className="fixed inset-0 pointer-events-none z-40" style={{width:'100%',height:'100%',opacity:.042}}>
+        <filter id="anoise"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+        <rect width="100%" height="100%" filter="url(#anoise)"/>
+      </svg>
+      <div className="fixed inset-0 pointer-events-none z-40"
+        style={{background:'radial-gradient(ellipse at center,transparent 48%,rgba(0,0,0,.72) 100%)'}}/>
+      {glitching&&<motion.div className="fixed inset-0 pointer-events-none z-[60]"
+        initial={{opacity:0}} animate={{opacity:[0,.75,0,.5,0,.65,0]}}
+        transition={{duration:.5,times:[0,.1,.2,.35,.5,.7,1]}}
+        style={{background:'linear-gradient(135deg,rgba(0,255,65,.25) 0%,transparent 40%,rgba(255,49,49,.25) 100%)'}}/>}
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 1 — ТЕРМИНАЛ
+══════════════════════════════════════════════ */
+const ASCII_LOGO=`
+    ╔═══════════════════════════════════╗
+    ║  ▄▄  ██  ██  ▄▄  ██▀▀  ██       ║
+    ║ █  █ ███ ██ ██   ██▄   ██       ║
+    ║ ████ ██ ███ ██ █ ██▀   ██       ║
+    ║ █  █ ██  ██  ▀▀  ██▄▄  ██▄▄▄   ║
+    ╠═══════════════════════════════════╣
+    ║      ◈   A N G E L  -  2 4  ◈   ║
+    ║        ПРОТОКОЛ НАБЛЮДЕНИЯ       ║
+    ╚═══════════════════════════════════╝`;
+
+const BOOT_LINES=[
+  {text:'> ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ...',color:'green',delay:55},
+  {text:'> ЗАГРУЗКА ПРОТОКОЛА ANGEL 24...',color:'green',delay:48},
+  {text:'> ДЕШИФРОВКА СЕКТОРА: УБУД, БАЛИ...',color:'green',delay:52},
+  {text:'> УСТАНОВКА ЗАЩИЩЁННОГО СОЕДИНЕНИЯ...',color:'green',delay:45},
+  {text:'> ВНИМАНИЕ: ЗА ЭТОЙ ТОЧКОЙ — СЕКРЕТНЫЕ ДАННЫЕ.',color:'red',delay:60},
+  {text:'> ВВЕДИТЕ КОД ДОСТУПА:',color:'green',delay:55},
+];
+
+function Terminal({onSuccess}){
+  const [lineIdx,setLineIdx]=useState(0);
+  const [charIdx,setCharIdx]=useState(0);
+  const [lines,setLines]=useState(BOOT_LINES.map(()=>''));
+  const [typingDone,setTypingDone]=useState(false);
+  const [input,setInput]=useState('');
+  const [status,setStatus]=useState(null);
+  const [attempts,setAttempts]=useState(0);
+  const [bgFlash,setBgFlash]=useState(false);
+  const inputRef=useRef(null);
+  const prevChar=useRef(-1);
+
+  useEffect(()=>{
+    if(lineIdx>=BOOT_LINES.length){setTypingDone(true);return;}
+    const L=BOOT_LINES[lineIdx];
+    if(charIdx<L.text.length){
+      const t=setTimeout(()=>{
+        setLines(p=>{const n=[...p];n[lineIdx]=L.text.slice(0,charIdx+1);return n;});
+        if(charIdx!==prevChar.current){playClick();prevChar.current=charIdx;}
+        setCharIdx(c=>c+1);
+      },charIdx===0?350:L.delay);
+      return()=>clearTimeout(t);
+    }else{
+      const t=setTimeout(()=>{setLineIdx(l=>l+1);setCharIdx(0);prevChar.current=-1;},220);
+      return()=>clearTimeout(t);
+    }
+  },[lineIdx,charIdx]);
+
+  useEffect(()=>{if(typingDone)setTimeout(()=>inputRef.current?.focus(),100);},[typingDone]);
+
+  const handleSubmit=(e)=>{
+    e.preventDefault();
+    if(status==='granted')return;
+    if(input==='2504'){
+      setStatus('granted');playGranted();setTimeout(onSuccess,1900);
+    }else{
+      setBgFlash(true);setStatus('denied');setAttempts(a=>a+1);setInput('');playDenied();
+      setTimeout(()=>{setBgFlash(false);setStatus(null);},700);
+    }
+  };
+
+  const G={color:'#00FF41',textShadow:'0 0 7px rgba(0,255,65,.5)'};
+  const R={color:'#FF3131',textShadow:'0 0 7px rgba(255,49,49,.7)'};
+
+  return(
+    <motion.div className="fixed inset-0 flex flex-col items-center justify-center p-8 overflow-hidden"
+      style={{backgroundColor:bgFlash?'#1a0000':'#050505',transition:'background-color .1s'}}
+      initial={{opacity:0}} animate={{opacity:1}}
+      exit={{scale:1.6,opacity:0,filter:'blur(20px)'}} transition={{duration:.55}}>
+      <motion.pre className="text-sm leading-tight mb-8 text-center select-none"
+        style={{...G,opacity:.82}} initial={{opacity:0,y:-20}} animate={{opacity:.82,y:0}} transition={{delay:.2,duration:.6}}>
+        {ASCII_LOGO}
+      </motion.pre>
+      <div className="w-full max-w-xl space-y-1">
+        {BOOT_LINES.map((L,i)=>(
+          <div key={i} className="text-base leading-relaxed" style={L.color==='red'?R:G}>
+            {lines[i]}
+            {i===lineIdx&&charIdx<L.text.length&&<span className="blink">█</span>}
+          </div>
+        ))}
+        <AnimatePresence>
+          {status==='denied'&&<motion.div key="d" initial={{opacity:0,x:-10}} animate={{opacity:1,x:0}} exit={{opacity:0}} className="text-base" style={R}>
+            {`> ДОСТУП ЗАПРЕЩЁН. ПОПЫТКА ЗАФИКСИРОВАНА. [${attempts+1}]`}
+          </motion.div>}
+          {status==='granted'&&<motion.div key="g" initial={{opacity:0}} animate={{opacity:1}} className="text-base" style={{...G,textShadow:'0 0 10px rgba(0,255,65,.9)'}}>
+            {'> ДОСТУП РАЗРЕШЁН. ЛИЧНОСТЬ ПОДТВЕРЖДЕНА. ДОБРО ПОЖАЛОВАТЬ, ОПЕРАТИВНИК.'}
+          </motion.div>}
+        </AnimatePresence>
+        {typingDone&&status!=='granted'&&(
+          <motion.form onSubmit={handleSubmit} className="flex items-center gap-3 mt-1"
+            initial={{opacity:0}} animate={{opacity:1}} transition={{duration:.3}}>
+            <span className="text-base" style={G}>{'>'}</span>
+            <input ref={inputRef} type="password" value={input}
+              onChange={e=>{startBGM();setInput(e.target.value);}} maxLength={8} autoComplete="off"
+              className="bg-transparent border-none outline-none text-base flex-1"
+              style={{caretColor:'transparent',fontFamily:'inherit',...G}} autoFocus/>
+            <motion.span className="text-base" style={G}
+              animate={{opacity:[1,0]}} transition={{duration:.8,repeat:Infinity,repeatType:'reverse'}}>▮</motion.span>
+          </motion.form>
+        )}
+      </div>
+      <div className="fixed bottom-5 left-0 right-0 flex justify-between px-8 text-sm" style={{color:'rgba(0,255,65,.22)'}}>
+        <span>ANGEL 24 v4.7.1</span>
+        <span>{new Date().toISOString().replace('T',' ').slice(0,19)} UTC</span>
+        <span>УРОВЕНЬ СЕКРЕТНОСТИ: ОМЕГА</span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 2 — ЛИЧНОЕ ДЕЛО
+══════════════════════════════════════════════ */
+const DOSSIER_ROWS=[
+  {type:'id',   text:'ДОСЬЕ ID: 25-04-2026-ANGEL'},
+  {type:'sep'},
+  {type:'row',label:'ГРИФ',            value:'██ СОВЕРШЕННО СЕКРЕТНО ██',red:true},
+  {type:'row',label:'СТАТУС',          value:'ПРОТОКОЛ ДР  ■  АКТИВЕН',bold:true},
+  {type:'sep'},
+  {type:'row',label:'ОБЪЕКТ',          value:'"THE ANGEL"'},
+  {type:'row',label:'ИНТЕЛЛЕКТ',       value:'██████████ [ОПАСНЫЙ УРОВЕНЬ]'},
+  {type:'note',text:'  ↳ Критически высокий. Системное примечание: опасна.'},
+  {type:'row',label:'ОСОБЫЕ ПРИМЕТЫ',  value:''},
+  {type:'note',text:'  ∙ Достигает всех поставленных целей'},
+  {type:'note',text:'  ∙ Нереально красива'},
+  {type:'note',text:'  ∙ Критический уровень заботливости'},
+  {type:'row',label:'СЛАБОСТИ',        value:''},
+  {type:'note',text:'  ∙ Капучино на кокосовом молоке'},
+  {type:'note',text:'  ∙ Милые глазки кисика 🐱'},
+  {type:'row',label:'ИНТУИЦИЯ',        value:'██████████ 10/10'},
+  {type:'note',text:'  ↳ Читает мысли до того, как слова произнесены'},
+  {type:'sep'},
+  {type:'row',label:'УРОВЕНЬ УГРОЗЫ',  value:'████████████████ МАКСИМАЛЬНЫЙ',red:true},
+];
+
+function Dossier({onNext}){
+  const [vis,setVis]=useState(0);
+  const [locked,setLocked]=useState(false);
+  const [showBtn,setShowBtn]=useState(false);
+  const [imgOk,setImgOk]=useState(false);
+
+  useEffect(()=>{const t=setTimeout(()=>setLocked(true),1200);return()=>clearTimeout(t);},[]);
+  useEffect(()=>{
+    if(vis>=DOSSIER_ROWS.length){setTimeout(()=>setShowBtn(true),400);return;}
+    const delay=DOSSIER_ROWS[vis]?.type==='sep'?80:165;
+    const t=setTimeout(()=>setVis(v=>v+1),delay);
+    return()=>clearTimeout(t);
+  },[vis]);
+
+  const G={color:'#00FF41',textShadow:'0 0 6px rgba(0,255,65,.5)'};
+  const D={color:'rgba(0,255,65,.5)'};
+  const B={color:'#00FF41',textShadow:'0 0 11px rgba(0,255,65,.85)'};
+  const R={color:'#FF3131',textShadow:'0 0 7px rgba(255,49,49,.7)'};
+
+  return(
+    <motion.div className="fixed inset-0 flex"
+      initial={{opacity:0,scale:.85}} animate={{opacity:1,scale:1}}
+      exit={{opacity:0,y:-40}} transition={{duration:.5}}>
+      {/* ЛЕВАЯ ПАНЕЛЬ — ФОТО */}
+      <div className="w-5/12 flex flex-col items-center justify-center p-8 relative"
+        style={{borderRight:'1px solid rgba(0,255,65,.12)'}}>
+        <motion.div className="absolute top-6 left-0 right-0 text-center text-sm tracking-widest"
+          style={B} animate={{opacity:[.6,1,.6]}} transition={{duration:2,repeat:Infinity}}>
+          РАСПОЗНАВАНИЕ ЛИЦА: СОВПАДЕНИЕ 99.9%
+        </motion.div>
+        <div className="relative w-64 h-80">
+          {[['top-0 left-0','border-t-2 border-l-2'],['top-0 right-0','border-t-2 border-r-2'],
+            ['bottom-0 left-0','border-b-2 border-l-2'],['bottom-0 right-0','border-b-2 border-r-2']].map(([pos,bdr],i)=>(
+            <motion.div key={i} className={`absolute w-7 h-7 ${pos} ${bdr}`}
+              style={{borderColor:'rgba(0,255,65,.75)'}}
+              animate={locked?{opacity:[.6,1,.6]}:{}} transition={{duration:1.5,repeat:Infinity,delay:i*.1}}/>
+          ))}
+          {locked&&<motion.div className="absolute inset-0 rounded-sm"
+            style={{border:'1px solid rgba(0,255,65,.35)'}}
+            animate={{scale:[1,1.03,1],opacity:[.4,.8,.4]}} transition={{duration:1.5,repeat:Infinity}}/>}
+          <div className="absolute inset-1 overflow-hidden">
+            <img src="images/profile_main.jpg" alt="THE ANGEL"
+              onLoad={()=>setImgOk(true)} className="w-full h-full object-cover"
+              style={imgOk?{filter:'grayscale(100%) sepia(40%) hue-rotate(80deg) brightness(.85) contrast(1.1)'}:{}}/>
+            <div className="absolute inset-0 pointer-events-none"
+              style={{backgroundImage:'linear-gradient(rgba(0,255,65,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,65,.07) 1px,transparent 1px)',backgroundSize:'20px 20px'}}/>
+            <motion.div className="absolute left-0 right-0 h-px"
+              style={{background:'rgba(0,255,65,.38)'}}
+              animate={{top:['0%','100%']}} transition={{duration:3,repeat:Infinity,ease:'linear'}}/>
+          </div>
+          {locked&&<>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-8 h-px" style={{background:'rgba(0,255,65,.6)'}}/>
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="h-8 w-px" style={{background:'rgba(0,255,65,.6)'}}/>
+            </div>
+          </>}
+        </div>
+        <motion.div className="mt-5 text-center space-y-1 text-sm" style={{color:'rgba(0,255,65,.45)'}}
+          initial={{opacity:0}} animate={{opacity:1}} transition={{delay:1.5}}>
+          <div>ШИР: -8.5069° ЮШ  |  ДОЛ: 115.2625° ВД</div>
+          <div>УБУД, БАЛИ  —  АКТИВНАЯ ЗОНА</div>
+          <motion.div style={{color:'rgba(0,255,65,.8)'}} animate={{opacity:[0,1,0]}} transition={{duration:1.2,repeat:Infinity}}>
+            ● ПРЯМАЯ ТРАНСЛЯЦИЯ
+          </motion.div>
+        </motion.div>
+      </div>
+      {/* ПРАВАЯ ПАНЕЛЬ — ДАННЫЕ */}
+      <div className="flex-1 flex flex-col justify-center p-10 overflow-hidden">
+        <motion.div className="text-sm tracking-[.3em] mb-6 uppercase" style={{color:'rgba(0,255,65,.35)'}}
+          initial={{opacity:0}} animate={{opacity:1}} transition={{delay:.3}}>
+          ▶ ЛИЧНОЕ ДЕЛО — ТОЛЬКО ДЛЯ СЛУЖЕБНОГО ПОЛЬЗОВАНИЯ
+        </motion.div>
+        <div className="space-y-0.5">
+          {DOSSIER_ROWS.map((row,i)=>(
+            <motion.div key={i} initial={{opacity:0,x:20}}
+              animate={i<vis?{opacity:1,x:0}:{opacity:0}} transition={{duration:.2}}>
+              {row.type==='sep'&&<div className="text-sm my-1" style={{color:'rgba(0,255,65,.2)'}}>{'─'.repeat(40)}</div>}
+              {row.type==='id'&&<div className="text-lg font-bold mb-2 tracking-widest" style={B}>{row.text}</div>}
+              {row.type==='note'&&<div className="text-sm leading-relaxed" style={{color:'rgba(0,255,65,.62)'}}>{row.text}</div>}
+              {row.type==='row'&&<div className="flex gap-2 text-sm leading-relaxed">
+                <span className="w-36 shrink-0" style={D}>{row.label}:</span>
+                <span style={row.red?R:G}>{row.value}</span>
+              </div>}
+            </motion.div>
+          ))}
+        </div>
+        {showBtn&&<motion.button onClick={onNext}
+          className="mt-10 self-start px-10 py-3 text-base tracking-widest uppercase"
+          style={{border:'1px solid #00FF41',...G,boxShadow:'0 0 14px rgba(0,255,65,.15)'}}
+          initial={{opacity:0,y:10}} animate={{opacity:1,y:0}}
+          whileHover={{backgroundColor:'rgba(0,255,65,.08)'}}>
+          ▶ ВОЙТИ В АРХИВ
+        </motion.button>}
+      </div>
+      <div className="absolute top-0 left-0 right-0 h-9 flex items-center px-6"
+        style={{borderBottom:'1px solid rgba(0,255,65,.08)'}}>
+        <span className="text-sm tracking-widest" style={{color:'rgba(0,255,65,.28)'}}>
+          ANGEL 24 // СЕКРЕТНЫЙ ДОСТУП // МОДУЛЬ: ЛИЧНОЕ ДЕЛО
+        </span>
+        <motion.span className="ml-auto text-sm" style={{color:'#FF3131'}}
+          animate={{opacity:[1,0,1]}} transition={{duration:1,repeat:Infinity}}>● ЗАПИСЬ</motion.span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 3 — СИНХРОНИЗАЦИЯ ДАННЫХ (MEMORY GAME)
+══════════════════════════════════════════════ */
+const PAIRS=[
+  {id:1,  photo:'images/photo_1.jpg',  text:"Точка невозврата. Запуск протокола «The Angel»"},
+  {id:2,  photo:'images/photo_2.jpg',  text:"Операция «Волга». Жаркий сезон в штабе"},
+  {id:3,  photo:'images/photo_3.jpg',  text:"Мой любимый грибочек"},
+  {id:4,  photo:'images/photo_4.jpg',  text:"Московские приключения"},
+  {id:5,  photo:'images/photo_5.jpg',  text:"Первые трудности на Бали"},
+  {id:6,  photo:'images/photo_6.jpg',  text:"Опять Зима"},
+  {id:7,  photo:'images/photo_7.jpg',  text:"Самое милое 14 февраля"},
+  {id:8,  photo:'images/photo_8.jpg',  text:"Малазийская сказка"},
+  {id:9,  photo:'images/photo_9.jpg',  text:"Бали 2026"},
+  {id:10, photo:'images/photo_10.jpg', text:"25.04.2026 — Главное событие года"},
+];
+
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function MemoryGame({onNext}){
+  const [cards]=useState(()=>shuffle([
+    ...PAIRS.map((p,i)=>({uid:`ph${i}`,pairId:p.id,type:'photo',content:p.photo})),
+    ...PAIRS.map((p,i)=>({uid:`tx${i}`,pairId:p.id,type:'text',content:p.text})),
+  ]));
+  const [flipped,setFlipped]=useState([]);
+  const [matched,setMatched]=useState(new Set());
+  const [shaking,setShaking]=useState(new Set());
+  const [disabled,setDisabled]=useState(false);
+  const [attempts,setAttempts]=useState(0);
+  const [success,setSuccess]=useState(false);
+  const [showBtn,setShowBtn]=useState(false);
+
+  const handleFlip=(idx)=>{
+    if(disabled)return;
+    if(matched.has(cards[idx].pairId))return;
+    if(flipped.includes(idx))return;
+    if(flipped.length>=2)return;
+    const nf=[...flipped,idx];
+    setFlipped(nf);
+    if(nf.length===2){
+      setDisabled(true);
+      setAttempts(a=>a+1);
+      const [i1,i2]=nf;
+      const c1=cards[i1],c2=cards[i2];
+      if(c1.pairId===c2.pairId&&c1.type!==c2.type){
+        playBeep();
+        setTimeout(()=>{
+          const nm=new Set([...matched,c1.pairId]);
+          setMatched(nm);setFlipped([]);setDisabled(false);
+          if(nm.size===10){playSuccess();setTimeout(()=>{setSuccess(true);setTimeout(()=>setShowBtn(true),1200);},400);}
+        },320);
+      }else{
+        playWrong();
+        setShaking(new Set([i1,i2]));
+        setTimeout(()=>{setFlipped([]);setShaking(new Set());setDisabled(false);},1050);
+      }
+    }
+  };
+
+  const CARD_W=128,CARD_H=158,GAP=10;
+
+  return(
+    <motion.div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden"
+      style={{background:'#050505'}}
+      initial={{opacity:0}} animate={{opacity:1}}
+      exit={{opacity:0,scale:.95}} transition={{duration:.45}}>
+
+      <motion.div className="mb-5 text-center px-4"
+        initial={{opacity:0,y:-18}} animate={{opacity:1,y:0}} transition={{delay:.2}}>
+        <div className="text-base tracking-[.25em] mb-1" style={{color:'#FF3131',textShadow:'0 0 8px rgba(255,49,49,.7)'}}>
+          ⚠ СИНХРОНИЗАЦИЯ ДАННЫХ — ФАЙЛЫ РАССЕКРЕЧЕНЫ ⚠
+        </div>
+        <div className="text-base" style={{color:'rgba(0,255,65,.75)'}}>
+          НАЙДИТЕ ВСЕ 10 ПАР: ФОТО + ОПИСАНИЕ
+        </div>
+        <div className="text-sm mt-1" style={{color:'rgba(0,255,65,.38)'}}>
+          Попытки: {attempts}  |  Найдено пар: {matched.size} / 10
+        </div>
+      </motion.div>
+
+      {/* СЕТКА КАРТОЧЕК */}
+      <div style={{
+        display:'grid',gridTemplateColumns:`repeat(5,${CARD_W}px)`,
+        gridTemplateRows:`repeat(4,${CARD_H}px)`,
+        gap:`${GAP}px`,
+        maxHeight:'calc(100vh - 220px)',overflow:'auto',
+      }}>
+        {cards.map((card,i)=>{
+          const isFlipped=flipped.includes(i)||matched.has(card.pairId);
+          const isMatched=matched.has(card.pairId);
+          const isShaking=shaking.has(i);
+          return(
+            <div key={card.uid}
+              className={isShaking?'card-shake':''}
+              style={{width:`${CARD_W}px`,height:`${CARD_H}px`,perspective:'700px',
+                cursor:isMatched?'default':'pointer',flexShrink:0,borderRadius:'4px'}}
+              onClick={()=>handleFlip(i)}>
+              <div style={{
+                width:'100%',height:'100%',position:'relative',
+                transformStyle:'preserve-3d',
+                transition:'transform 0.42s ease',
+                transform:isFlipped?'rotateY(180deg)':'rotateY(0deg)',
+                borderRadius:'4px',
+              }}>
+                {/* РУБАШКА */}
+                <div style={{
+                  position:'absolute',inset:0,borderRadius:'4px',
+                  backfaceVisibility:'hidden',background:'#060f06',
+                  border:`1px solid ${isMatched?'#00FF41':'rgba(0,255,65,.22)'}`,
+                  display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                  boxShadow:isMatched?'0 0 16px rgba(0,255,65,.4)':'none',gap:'6px',
+                }}>
+                  <div style={{color:'rgba(0,255,65,.38)',fontSize:'28px',textShadow:'0 0 10px rgba(0,255,65,.35)'}}>◈</div>
+                  <div style={{color:'rgba(0,255,65,.2)',fontSize:'11px',letterSpacing:'3px'}}>ANGEL 24</div>
+                </div>
+                {/* ЛИЦО */}
+                <div style={{
+                  position:'absolute',inset:0,borderRadius:'4px',
+                  backfaceVisibility:'hidden',transform:'rotateY(180deg)',
+                  border:`1px solid ${isMatched?'#00FF41':'rgba(0,255,65,.45)'}`,
+                  overflow:'hidden',
+                  boxShadow:isMatched?'0 0 22px rgba(0,255,65,.55)':'none',
+                }}>
+                  {card.type==='photo'?(
+                    <img src={card.content} alt="" draggable={false}
+                      style={{width:'100%',height:'100%',objectFit:'cover',
+                        filter:'grayscale(100%) sepia(30%) hue-rotate(80deg) brightness(.8) contrast(1.1)'}}
+                      onError={e=>{e.target.style.display='none';}}/>
+                  ):(
+                    <div style={{width:'100%',height:'100%',background:'#060f06',
+                      display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
+                      <p style={{color:isMatched?'#00FF41':'rgba(0,255,65,.82)',fontSize:'12px',
+                        textAlign:'center',lineHeight:'1.55',fontFamily:"'JetBrains Mono',monospace",
+                        textShadow:isMatched?'0 0 6px rgba(0,255,65,.6)':'none'}}>
+                        {card.content}
+                      </p>
+                    </div>
+                  )}
+                  {isMatched&&<div style={{position:'absolute',top:'5px',right:'7px',
+                    color:'#00FF41',fontSize:'14px',textShadow:'0 0 8px rgba(0,255,65,.9)'}}>✓</div>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ПРОГРЕСС */}
+      <div className="flex gap-2 mt-4">
+        {Array.from({length:10},(_,i)=>(
+          <div key={i} className="transition-all duration-300 rounded-full"
+            style={{width:i<matched.size?'28px':'12px',height:'12px',
+              backgroundColor:i<matched.size?'#00FF41':'rgba(0,255,65,.15)'}}/>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {success&&<motion.div className="fixed inset-0 pointer-events-none z-50"
+          initial={{opacity:0}} animate={{opacity:[0,1,0]}} exit={{opacity:0}}
+          transition={{duration:.65}} style={{background:'rgba(255,255,255,.12)'}}/>}
+      </AnimatePresence>
+
+      {success&&(
+        <motion.div className="mt-5 text-center"
+          initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{delay:.4}}>
+          <div className="text-base tracking-widest mb-4"
+            style={{color:'#00FF41',textShadow:'0 0 12px rgba(0,255,65,.9)'}}>
+            ✓ СИНХРОНИЗАЦИЯ ЗАВЕРШЕНА — ВСЕ 10 ПАР НАЙДЕНЫ
+          </div>
+          {showBtn&&<motion.button onClick={onNext}
+            className="px-12 py-3 text-base tracking-widest uppercase"
+            style={{border:'1px solid #00FF41',color:'#00FF41',textShadow:'0 0 8px rgba(0,255,65,.6)',boxShadow:'0 0 16px rgba(0,255,65,.22)'}}
+            initial={{opacity:0}} animate={{opacity:1}}
+            whileHover={{backgroundColor:'rgba(0,255,65,.1)'}}>
+            ▶ ОТКРЫТЬ ГЛОБАЛЬНЫЙ РАДАР
+          </motion.button>}
+        </motion.div>
+      )}
+
+      <div className="fixed bottom-5 left-0 right-0 flex justify-between px-8 text-sm"
+        style={{color:'rgba(0,255,65,.18)'}}>
+        <span>МОДУЛЬ: СИНХРОНИЗАЦИЯ ДАННЫХ</span>
+        <span>ПАРЫ: {matched.size}/10  |  ПОПЫТКИ: {attempts}</span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 4 — 24 ДИРЕКТИВЫ
+══════════════════════════════════════════════ */
+const DIRECTIVES=[
+  {id:1,  text:'Полная синхронизация тела, разума и энергии. Статус системы: Гармония.'},
+  {id:2,  text:'Достижение состояния «Фитнес-Богини». Твоя воля — твой главный ресурс.'},
+  {id:3,  text:'Успешный взлом системы РПП. Теперь ты — хозяйка своего питания и энергии.'},
+  {id:4,  text:'Протокол "Путешественник". Впереди тысячи миль совместных дорог.'},
+  {id:5,  text:'Протокол «Кисик». Уровень милоты: Критический. Доступ к моим объятиям 24/7.'},
+  {id:6,  text:'Цель в 1 000 000 подписчиков переведена в статус «Неизбежное». Загрузка медийности...'},
+  {id:7,  text:'Глобальная экспансия. Твои выступления на мировых сценах зашиты в код будущего.'},
+  {id:8,  text:'Запуск собственного продукта. Рынок готов к твоему влиянию.'},
+  {id:9,  text:'Бесконечный цикл глубоких разговоров. Связь установлена.'},
+  {id:10, text:'Твоя улыбка признана главным источником дофамина в системе. Генерируй её чаще.'},
+  {id:11, text:'Победа в категории «Фитнес-Бикини» на ментальном и физическом уровне достигнута.'},
+  {id:12, text:'Каждое путешествие со мной — это новая глава нашей общей секретной истории.'},
+  {id:13, text:'Доступ к самым глубоким уровням работы с энергией открыт. Ты видишь то, что скрыто от других.'},
+  {id:14, text:'Твоё тело — твой храм. Режим самовосстановления работает на 100%.'},
+  {id:15, text:'Статус «Самая красивая женщина мира» закреплён за тобой пожизненно.'},
+  {id:16, text:'Миллионы людей ждут твоего слова. Твой блог — это твоя трибуна.'},
+  {id:17, text:'Каждое твоё умиление и улыбка — это победа системы над серыми буднями.'},
+  {id:18, text:'Совместные практики и медитации переводят наши отношения на уровень 5D.'},
+  {id:19, text:'Наш путь в другую страну — это не просто поездка, а захват новых горизонтов.'},
+  {id:20, text:'Только чистая энергия и природная мощь твоего организма.'},
+  {id:21, text:'Протокол «Забота». Твоё умение любить делает этот мир безопаснее.'},
+  {id:22, text:'Все цели, которые ты ставишь, уже считаются выполненными в архивах будущего.'},
+  {id:23, text:'Ты — мой главный мотиватор и самый ценный артефакт в этой реальности.'},
+  {id:24, text:'Сегодня — твой день. Система Angel-24 полностью в твоём распоряжении. С днём рождения, Любимая!'},
+];
+
+const SCRAMBLE_CHARS='!@#$%^&*<>?/|[]{}АБВГДЕЁЖЗИЙКЛМН0123456789#@!%$&*><';
+
+function WishesGrid({onNext}){
+  const [unlocked,setUnlocked]=useState(new Set());
+  const [decrypting,setDecrypting]=useState(new Set());
+  const [scrambled,setScrambled]=useState({});
+  const [showBtn,setShowBtn]=useState(false);
+  const timers=useRef({});
+
+  useEffect(()=>()=>Object.values(timers.current).forEach(clearInterval),[]);
+
+  const handleClick=(dir)=>{
+    if(unlocked.has(dir.id)||decrypting.has(dir.id))return;
+    playDecrypt();
+    setDecrypting(prev=>new Set([...prev,dir.id]));
+    let elapsed=0;
+    const iv=setInterval(()=>{
+      elapsed+=75;
+      const prog=Math.min(elapsed/1500,1);
+      const reveal=Math.floor(prog*dir.text.length);
+      const rest=Array.from({length:dir.text.length-reveal},()=>
+        SCRAMBLE_CHARS[Math.floor(Math.random()*SCRAMBLE_CHARS.length)]).join('');
+      setScrambled(p=>({...p,[dir.id]:dir.text.slice(0,reveal)+rest}));
+      if(elapsed>=1500){
+        clearInterval(iv);
+        setScrambled(p=>({...p,[dir.id]:dir.text}));
+        setDecrypting(p=>{const n=new Set(p);n.delete(dir.id);return n;});
+        setUnlocked(p=>{
+          const n=new Set([...p,dir.id]);
+          if(n.size===24)setTimeout(()=>setShowBtn(true),700);
+          return n;
+        });
+      }
+    },75);
+    timers.current[dir.id]=iv;
+  };
+
+  return(
+    <motion.div className="fixed inset-0 flex flex-col items-center p-4 overflow-auto"
+      style={{background:'#050505'}}
+      initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0,scale:.95}} transition={{duration:.45}}>
+
+      <motion.div className="mt-4 mb-4 text-center"
+        initial={{opacity:0,y:-15}} animate={{opacity:1,y:0}} transition={{delay:.2}}>
+        <div className="text-base tracking-[.3em] uppercase mb-1"
+          style={{color:'#00FF41',textShadow:'0 0 9px rgba(0,255,65,.7)'}}>
+          ◈ ANGEL 24 // АРХИВ ДИРЕКТИВ ◈
+        </div>
+        <div className="text-sm" style={{color:'rgba(0,255,65,.42)'}}>
+          24 ЗАШИФРОВАННЫХ ДИРЕКТИВЫ — НАЖМИ ДЛЯ ДЕШИФРОВКИ
+        </div>
+        <div className="text-sm mt-1" style={{color:'rgba(0,255,65,.28)'}}>
+          Расшифровано: {unlocked.size} / 24
+        </div>
+      </motion.div>
+
+      {/* СЕТКА 4×6 desktop / 2×12 mobile */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full px-2"
+        style={{maxWidth:'1100px'}}>
+        {DIRECTIVES.map((dir,idx)=>{
+          const isU=unlocked.has(dir.id),isD=decrypting.has(dir.id);
+          const display=isD&&scrambled[dir.id]?scrambled[dir.id]:isU?dir.text:`[LOCKED_FILE_${String(dir.id).padStart(2,'0')}]`;
+          return(
+            <motion.div key={dir.id}
+              onClick={()=>handleClick(dir)}
+              initial={{opacity:0,scale:.88}} animate={{opacity:1,scale:1}}
+              transition={{delay:idx*0.025,duration:.3}}
+              whileHover={!isU&&!isD?{
+                x:[-1,2,-2,1,0],
+                filter:['brightness(1)','brightness(1.55) hue-rotate(15deg)','brightness(1)'],
+                transition:{duration:.22},
+              }:{}}
+              style={{
+                border:`1px solid ${isU?'#00FF41':isD?'rgba(0,255,65,.55)':'rgba(0,255,65,.17)'}`,
+                backgroundColor:isU?'rgba(0,255,65,.055)':'rgba(3,8,3,.85)',
+                boxShadow:isU?'0 0 14px rgba(0,255,65,.22)':'none',
+                cursor:isU?'default':'pointer',
+                minHeight:'88px',
+                display:'flex',flexDirection:'column',
+                padding:'9px 11px',position:'relative',overflow:'hidden',
+                borderRadius:'2px',
+                transition:'border-color .3s,box-shadow .3s,background-color .4s',
+              }}>
+              {/* Номер директивы */}
+              <div style={{fontSize:'9px',letterSpacing:'2px',marginBottom:'5px',
+                color:isU?'rgba(0,255,65,.55)':'rgba(0,255,65,.22)',
+                fontFamily:"'JetBrains Mono',monospace"}}>
+                DIRECTIVE {String(dir.id).padStart(2,'0')} {isU&&'✓'}
+              </div>
+              {/* Текст */}
+              <div style={{
+                fontSize:'12px',lineHeight:'1.55',flex:1,
+                display:'flex',alignItems:'center',
+                fontFamily:"'JetBrains Mono',monospace",
+                wordBreak:'break-word',
+                color:isU?'#00FF41':isD?'rgba(0,255,65,.72)':'rgba(0,255,65,.32)',
+                textShadow:isU?'0 0 6px rgba(0,255,65,.45)':'none',
+              }}>
+                {display}
+              </div>
+              {/* Сканлайн при дешифровке */}
+              {isD&&(
+                <motion.div style={{position:'absolute',left:0,right:0,height:'1px',
+                  background:'rgba(0,255,65,.55)',pointerEvents:'none'}}
+                  animate={{top:['0%','100%']}} transition={{duration:.35,repeat:Infinity,ease:'linear'}}/>
+              )}
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Кнопка перехода (после открытия всех 24) */}
+      <AnimatePresence>
+        {showBtn&&(
+          <motion.button onClick={onNext}
+            className="mt-6 mb-6 px-12 py-3 text-base tracking-widest uppercase"
+            style={{border:'1px solid #00FF41',color:'#00FF41',
+              textShadow:'0 0 8px rgba(0,255,65,.6)',boxShadow:'0 0 20px rgba(0,255,65,.25)'}}
+            initial={{opacity:0,y:30}} animate={{opacity:1,y:0}}
+            exit={{opacity:0}} transition={{duration:.85}}
+            whileHover={{backgroundColor:'rgba(0,255,65,.08)'}}>
+            ▶ ПЕРЕЙТИ К ГЛОБАЛЬНОМУ СКАНЕРУ
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <div className="fixed bottom-5 left-0 right-0 flex justify-between px-8 text-sm"
+        style={{color:'rgba(0,255,65,.18)'}}>
+        <span>ANGEL 24 // АРХИВ ДИРЕКТИВ</span>
+        <span>РАСШИФРОВАНО: {unlocked.size}/24</span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 5 — ГЛОБАЛЬНЫЙ РАДАР (WORLD MAP)
+══════════════════════════════════════════════ */
+const LOCATIONS=[
+  {id:1,order:1,name:'САМАРА',          lon:50.2,  lat:53.2,  text:'Здесь всё началось. Корневой сектор системы.'},
+  {id:2,order:2,name:'САНКТ-ПЕТЕРБУРГ', lon:30.3,  lat:59.9,  text:"Сектор «Северная Пальмира». Важный узел связи."},
+  {id:3,order:3,name:'БАЛИ',            lon:115.2, lat:-8.5,  text:'Первая высадка. Код доступа: Остров.'},
+  {id:4,order:4,name:'ДАНАНГ',          lon:108.2, lat:16.0,  text:'Временное базирование. Океанский сектор.'},
+  {id:5,order:5,name:'США',             lon:-100.0,lat:38.0,  text:'Цель обнаружена. Вектор будущего развития. ДОСТУП РАЗРЕШЁН.'},
+];
+const MAP_W=1200,MAP_H=580;
+
+function WorldMap({onNext}){
+  const [countryPaths,setCountryPaths]=useState([]);
+  const [gratPath,setGratPath]=useState('');
+  const [cityPos,setCityPos]=useState({});
+  const [confirmed,setConfirmed]=useState(0);
+  const [activePopup,setActivePopup]=useState(null);
+  const [errorFlash,setErrorFlash]=useState(false);
+  const [showBtn,setShowBtn]=useState(false);
+
+  useEffect(()=>{
+    const d3=window.d3,topo=window.topojson;
+    if(!d3||!topo)return;
+    const proj=d3.geoNaturalEarth1().scale(188).translate([MAP_W/2,MAP_H/2+18]);
+    const path=d3.geoPath().projection(proj);
+    const pos={};
+    LOCATIONS.forEach(l=>{const pt=proj([l.lon,l.lat]);if(pt)pos[l.id]={x:pt[0],y:pt[1]};});
+    setCityPos(pos);
+    try{setGratPath(path(d3.geoGraticule()()));}catch(e){}
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+      .then(r=>r.json()).then(world=>{
+        const feats=topo.feature(world,world.objects.countries).features;
+        setCountryPaths(feats.map((f,i)=>({id:f.id??i,d:path(f)||''})).filter(p=>p.d));
+      }).catch(()=>{});
+  },[]);
+
+  const handleClick=(loc)=>{
+    if(loc.order===confirmed+1){
+      playPing();setConfirmed(c=>c+1);setActivePopup(loc.id);
+      if(loc.order===5)setTimeout(()=>setShowBtn(true),1200);
+    }else if(loc.order<=confirmed){
+      setActivePopup(loc.id);
+    }else{
+      playDenied();setErrorFlash(true);setConfirmed(0);setActivePopup(null);
+      setTimeout(()=>setErrorFlash(false),700);
+    }
+  };
+
+  const activeL=LOCATIONS.find(l=>l.id===activePopup);
+
+  return(
+    <motion.div className="fixed inset-0 flex flex-col items-center justify-center"
+      style={{background:errorFlash?'#110000':'#050505',transition:'background .1s'}}
+      initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:.45}}>
+
+      <motion.div className="mb-3 text-center"
+        initial={{opacity:0,y:-15}} animate={{opacity:1,y:0}} transition={{delay:.2}}>
+        <div className="text-base tracking-[.3em] uppercase mb-1"
+          style={{color:'#00FF41',textShadow:'0 0 9px rgba(0,255,65,.7)'}}>
+          ◈ ГЛОБАЛЬНЫЙ РАДАР — ПОДТВЕРДИТЕ МАРШРУТ ОБЪЕКТА ◈
+        </div>
+        <div className="text-sm" style={{color:'rgba(0,255,65,.42)'}}>
+          Нажимайте точки в строгом порядке. Ошибка — сброс прогресса.
+        </div>
+        {errorFlash&&<div className="text-base mt-1" style={{color:'#FF3131',textShadow:'0 0 8px rgba(255,49,49,.9)'}}>
+          ⚠ НЕВЕРНЫЙ МАРШРУТ — ПРОГРЕСС СБРОШЕН
+        </div>}
+      </motion.div>
+
+      <motion.div className="w-full px-4" style={{maxWidth:'1300px'}}
+        initial={{opacity:0,scale:.95}} animate={{opacity:1,scale:1}} transition={{delay:.3,duration:.5}}>
+        <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{width:'100%',maxHeight:'52vh',display:'block'}}>
+          <defs>
+            <radialGradient id="wbg" cx="50%" cy="50%" r="70%">
+              <stop offset="0%" stopColor="#0a1a0a"/><stop offset="100%" stopColor="#050505"/>
+            </radialGradient>
+            <filter id="wglow"><feGaussianBlur stdDeviation="2.5" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <rect width={MAP_W} height={MAP_H} fill="url(#wbg)"/>
+          {/* Граткюль — реальные линии широт/долгот */}
+          {gratPath&&<path d={gratPath} fill="none" stroke="rgba(0,255,65,.045)" strokeWidth="0.55"/>}
+          {/* Страны (D3 + TopoJSON) */}
+          {countryPaths.length===0&&(
+            <text x={MAP_W/2} y={MAP_H/2} fill="rgba(0,255,65,.35)" textAnchor="middle"
+              fontSize="15" fontFamily="'JetBrains Mono',monospace">ЗАГРУЗКА КАРТЫ...</text>
+          )}
+          {countryPaths.map(p=>(
+            <path key={p.id} d={p.d} fill="rgba(0,255,65,.1)" stroke="rgba(0,255,65,.28)" strokeWidth="0.7"/>
+          ))}
+          {/* Радарная развёртка */}
+          <motion.g animate={{rotate:360}} transition={{duration:6,repeat:Infinity,ease:'linear'}}
+            style={{transformOrigin:`${MAP_W/2}px ${MAP_H/2+18}px`}}>
+            <line x1={MAP_W/2} y1={MAP_H/2+18} x2={MAP_W/2} y2={0}
+              stroke="rgba(0,255,65,.28)" strokeWidth="1.5" filter="url(#wglow)"/>
+            <path d={`M ${MAP_W/2} ${MAP_H/2+18} L ${MAP_W/2} 0 A ${MAP_H/2} ${MAP_H/2} 0 0 0 ${MAP_W/2-60} ${MAP_H/2-272}`}
+              fill="rgba(0,255,65,.03)"/>
+          </motion.g>
+          {/* Линии подтверждённых точек */}
+          {confirmed>=2&&LOCATIONS.slice(0,confirmed-1).map((l,i)=>{
+            const next=LOCATIONS[i+1];
+            const p1=cityPos[l.id],p2=cityPos[next.id];
+            if(!p1||!p2)return null;
+            return<line key={`cl${i}`} className="draw" x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+              stroke="rgba(0,255,65,.6)" strokeWidth="2"/>;
+          })}
+          {/* Города */}
+          {LOCATIONS.map(loc=>{
+            const pos=cityPos[loc.id];
+            if(!pos)return null;
+            const isDone=loc.order<=confirmed;
+            const isNext=loc.order===confirmed+1;
+            const isActive=activePopup===loc.id;
+            return(
+              <g key={loc.id} onClick={()=>handleClick(loc)} style={{cursor:'pointer'}}>
+                <circle className="ping" cx={pos.x} cy={pos.y} r={10}
+                  fill="none" stroke={isDone?'rgba(0,255,65,.65)':isNext?'rgba(0,255,65,.5)':'rgba(0,255,65,.25)'}
+                  strokeWidth="1.5"/>
+                <circle className="ping" cx={pos.x} cy={pos.y} r={10}
+                  fill="none" stroke={isDone?'rgba(0,255,65,.5)':isNext?'rgba(0,255,65,.35)':'rgba(0,255,65,.15)'}
+                  strokeWidth="1" style={{animationDelay:'.9s'}}/>
+                <motion.circle cx={pos.x} cy={pos.y} r={isDone?8:isNext?6:5}
+                  fill={isDone?'#00FF41':isNext?'rgba(0,255,65,.7)':'rgba(0,255,65,.35)'}
+                  stroke="#00FF41" strokeWidth="1.5" filter="url(#wglow)"
+                  animate={isActive?{r:[isDone?8:6,isDone?11:8,isDone?8:6]}:{}}
+                  transition={{duration:1,repeat:Infinity}}/>
+                <text x={pos.x+13} y={pos.y-9}
+                  fill={isDone?'rgba(0,255,65,.95)':isNext?'rgba(0,255,65,.7)':'rgba(0,255,65,.4)'}
+                  fontSize="11" fontFamily="'JetBrains Mono',monospace" letterSpacing="1"
+                  fontWeight={isDone?'700':'400'}>
+                  {loc.name} {isDone&&'✓'}
+                </text>
+                <text x={pos.x+13} y={pos.y+4} fill="rgba(0,255,65,.4)"
+                  fontSize="9" fontFamily="'JetBrains Mono',monospace">[{loc.order}/5]</text>
+              </g>
+            );
+          })}
+          <rect x="2" y="2" width={MAP_W-4} height={MAP_H-4} fill="none" stroke="rgba(0,255,65,.2)" strokeWidth="1.5"/>
+        </svg>
+      </motion.div>
+
+      {/* ВСПЛЫВАЮЩЕЕ ОКНО */}
+      <AnimatePresence>
+        {activeL&&(
+          <motion.div key={activeL.id}
+            className="mt-3 px-8 py-4 text-center"
+            style={{border:'1px solid rgba(0,255,65,.45)',background:'rgba(0,8,0,.95)',
+              boxShadow:'0 0 24px rgba(0,255,65,.15)',maxWidth:'600px'}}
+            initial={{opacity:0,y:12,filter:'blur(4px)'}} animate={{opacity:1,y:0,filter:'blur(0px)'}}
+            exit={{opacity:0,y:12}} transition={{duration:.28}}>
+            <div className="text-base tracking-widest mb-1"
+              style={{color:'#00FF41',textShadow:'0 0 7px rgba(0,255,65,.85)'}}>
+              {activeL.name} — ТОЧКА {activeL.order}/5
+            </div>
+            <div className="text-base leading-relaxed"
+              style={{color:'rgba(0,255,65,.82)'}}>
+              {activeL.text}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ПРОГРЕСС МАРШРУТА */}
+      <div className="flex gap-3 mt-3 items-center">
+        {LOCATIONS.map(l=>(
+          <div key={l.id} className="flex items-center gap-1">
+            <div className="rounded-full transition-all duration-400"
+              style={{width:'14px',height:'14px',
+                backgroundColor:l.order<=confirmed?'#00FF41':'rgba(0,255,65,.15)',
+                boxShadow:l.order<=confirmed?'0 0 8px rgba(0,255,65,.7)':'none'}}/>
+            {l.order<5&&<div style={{width:'20px',height:'1px',background:l.order<confirmed?'rgba(0,255,65,.6)':'rgba(0,255,65,.15)'}}/>}
+          </div>
+        ))}
+        <span className="text-sm ml-2" style={{color:'rgba(0,255,65,.45)'}}>
+          Подтверждено: {confirmed}/5
+        </span>
+      </div>
+
+      {showBtn&&(
+        <motion.button onClick={onNext}
+          className="mt-4 px-12 py-3 text-base tracking-widest uppercase"
+          style={{border:'1px solid #00FF41',color:'#00FF41',textShadow:'0 0 8px rgba(0,255,65,.6)',boxShadow:'0 0 16px rgba(0,255,65,.22)'}}
+          initial={{opacity:0,y:10}} animate={{opacity:1,y:0}}
+          whileHover={{backgroundColor:'rgba(0,255,65,.08)'}}>
+          ▶ ИНИЦИИРОВАТЬ ФИНАЛЬНЫЙ ПРОТОКОЛ
+        </motion.button>
+      )}
+
+      <div className="fixed bottom-5 left-0 right-0 flex justify-between px-8 text-sm"
+        style={{color:'rgba(0,255,65,.18)'}}>
+        <span>МОДУЛЬ: ГЛОБАЛЬНЫЙ РАДАР</span>
+        <span>МАРШРУТ: САМАРА → СПБ → БАЛИ → ДАНАНГ → США</span>
+        <span>ТОЧЕК: {confirmed}/5</span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   ЭКРАН 5 — ФИНАЛЬНЫЙ ПРОТОКОЛ
+══════════════════════════════════════════════ */
+const PARTICLES=Array.from({length:100},(_,i)=>({
+  id:i,x:Math.random()*100,delay:Math.random()*3.5,
+  dur:4.5+Math.random()*5,char:Math.random()>.5?'1':'0',
+  size:11+Math.floor(Math.random()*18),
+  opacity:.22+Math.random()*.6,drift:(Math.random()-.5)*45,
+  isRed:Math.random()>.88,
+}));
+
+function Confetti(){
+  return(
+    <div className="fixed inset-0 pointer-events-none overflow-hidden z-40">
+      {PARTICLES.map(p=>(
+        <motion.span key={p.id} className="absolute select-none"
+          style={{left:`${p.x}%`,top:'-5%',
+            color:p.isRed?'#FF3131':'#00FF41',fontSize:`${p.size}px`,
+            fontFamily:"'JetBrains Mono',monospace",opacity:p.opacity,
+            textShadow:'0 0 6px rgba(0,255,65,.6)'}}
+          animate={{top:['-5%','112%'],x:[0,p.drift,0,-p.drift,0]}}
+          transition={{top:{duration:p.dur,delay:p.delay,repeat:Infinity,ease:'linear'},
+            x:{duration:p.dur/2,delay:p.delay,repeat:Infinity,ease:'easeInOut'}}}>
+          {p.char}
+        </motion.span>
+      ))}
+    </div>
+  );
+}
+
+function AccessCard(){
+  const cardRef=useRef(null);
+  const mx=useMotionValue(0),my=useMotionValue(0);
+  const rX=useSpring(useTransform(my,[-1,1],[18,-18]),{stiffness:200,damping:20});
+  const rY=useSpring(useTransform(mx,[-1,1],[-18,18]),{stiffness:200,damping:20});
+  const onMove=(e)=>{
+    if(!cardRef.current)return;
+    const r=cardRef.current.getBoundingClientRect();
+    mx.set(((e.clientX-r.left)/r.width-.5)*2);
+    my.set(((e.clientY-r.top)/r.height-.5)*2);
+  };
+  return(
+    <motion.div ref={cardRef} style={{perspective:900}} onMouseMove={onMove}
+      onMouseLeave={()=>{mx.set(0);my.set(0);}}>
+      <motion.div style={{rotateX:rX,rotateY:rY,transformStyle:'preserve-3d',
+        position:'relative',width:'420px',height:'245px',borderRadius:'14px'}}
+        initial={{scale:0,rotateY:-180,opacity:0}} animate={{scale:1,rotateY:0,opacity:1}}
+        transition={{duration:.85,type:'spring',stiffness:78,damping:14}}>
+        <div className="absolute inset-0 rounded-2xl" style={{
+          background:'linear-gradient(135deg,#0a1a0a 0%,#102510 40%,#0a1a0a 70%,#050505 100%)',
+          border:'1px solid rgba(0,255,65,.4)',
+          boxShadow:'0 0 45px rgba(0,255,65,.22),0 0 90px rgba(0,255,65,.09),inset 0 0 35px rgba(0,0,0,.5)'
+        }}/>
+        <div className="absolute inset-0 rounded-2xl pointer-events-none" style={{
+          backgroundImage:'linear-gradient(rgba(0,255,65,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,65,.04) 1px,transparent 1px)',
+          backgroundSize:'26px 26px'
+        }}/>
+        <motion.div className="absolute left-0 right-0 h-px pointer-events-none"
+          style={{background:'rgba(0,255,65,.22)'}}
+          animate={{top:['0%','100%']}} transition={{duration:3,repeat:Infinity,ease:'linear'}}/>
+        <div className="absolute inset-0 p-7 flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-xs tracking-[.3em] uppercase mb-1" style={{color:'rgba(0,255,65,.45)'}}>
+                ANGEL 24 // КАРТА ДОСТУПА
+              </div>
+              <div className="text-2xl font-bold tracking-wider"
+                style={{color:'#00FF41',textShadow:'0 0 14px rgba(0,255,65,.85)'}}>
+                THE ANGEL
+              </div>
+            </div>
+            <div className="text-4xl" style={{color:'#00FF41',textShadow:'0 0 18px rgba(0,255,65,.9)'}}>◈</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs tracking-widest" style={{color:'rgba(0,255,65,.65)'}}>
+              ∙ УРОВЕНЬ ДОСТУПА: OMNISCIENCE — БЕЗГРАНИЧНОЕ ЗНАНИЕ
+            </div>
+            <div className="text-xs tracking-widest" style={{color:'rgba(0,255,65,.55)'}}>
+              ∙ ПРОТОКОЛ: UNLIMITED EDUCATION — ДОСТУП К ОБУЧЕНИЮ
+            </div>
+            <div className="text-xs tracking-widest" style={{color:'rgba(0,255,65,.55)'}}>
+              ∙ АКТИВИРОВАН: ПАКЕТ ЦВЕТОВ И ПРАКТИК
+            </div>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-xs tracking-widest mb-0.5" style={{color:'rgba(0,255,65,.38)'}}>ВЛАДЕЛЕЦ</div>
+              <div className="text-base tracking-[.2em]"
+                style={{color:'#00FF41',textShadow:'0 0 9px rgba(0,255,65,.65)'}}>★ THE ANGEL ★</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs tracking-widest mb-0.5" style={{color:'rgba(0,255,65,.38)'}}>ДЕЙСТВУЕТ</div>
+              <div className="text-sm" style={{color:'rgba(0,255,65,.78)'}}>НАВСЕГДА</div>
+            </div>
+          </div>
+        </div>
+        {[[' top-2 left-2','border-t border-l'],['top-2 right-2','border-t border-r'],
+          ['bottom-2 left-2','border-b border-l'],['bottom-2 right-2','border-b border-r']].map(([pos,b],i)=>(
+          <div key={i} className={`absolute w-5 h-5 ${pos}`}
+            style={{borderColor:'rgba(0,255,65,.5)',
+              borderTopWidth:i<2?'1px':'0',borderBottomWidth:i>=2?'1px':'0',
+              borderLeftWidth:i%2===0?'1px':'0',borderRightWidth:i%2===1?'1px':'0'}}/>
+        ))}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function GrandFinale(){
+  const [phase,setPhase]=useState('button');
+  const [count,setCount]=useState(5);
+
+  useEffect(()=>{
+    if(phase!=='countdown')return;
+    if(count===0){playTick(true);setTimeout(()=>{setPhase('card');playReveal();},1000);return;}
+    const t=setTimeout(()=>{playTick(false);setCount(c=>c-1);},1000);
+    return()=>clearTimeout(t);
+  },[phase,count]);
+
+  const R={color:'#FF3131',textShadow:'0 0 14px rgba(255,49,49,.9)'};
+
+  return(
+    <motion.div className="fixed inset-0 flex flex-col items-center justify-center p-6 overflow-hidden"
+      style={{background:'#050505'}}
+      initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:.4}}>
+
+      {phase==='button'&&(
+        <motion.div className="flex flex-col items-center gap-8"
+          initial={{opacity:0,scale:.9}} animate={{opacity:1,scale:1}}>
+          <div className="text-lg tracking-[.3em] text-center" style={{color:'rgba(0,255,65,.5)'}}>
+            ВЫПОЛНЕНА ПОЛНАЯ ДЕШИФРОВКА ЛИЧНОСТИ
+          </div>
+          <div className="text-base tracking-widest text-center" style={{color:'rgba(0,255,65,.35)'}}>
+            ВСЕ ДАННЫЕ РАСШИФРОВАНЫ. ОБЪЕКТ ИДЕНТИФИЦИРОВАН.
+          </div>
+          <motion.button onClick={()=>setPhase('countdown')}
+            className="px-16 py-5 border-2 text-xl tracking-[.3em] uppercase"
+            style={{borderColor:'#FF3131',...R}}
+            whileHover={{backgroundColor:'rgba(255,49,49,.08)',boxShadow:'0 0 35px rgba(255,49,49,.45)'}}
+            animate={{boxShadow:['0 0 12px rgba(255,49,49,.22)','0 0 28px rgba(255,49,49,.55)','0 0 12px rgba(255,49,49,.22)']}}
+            transition={{duration:2,repeat:Infinity}}>
+            ▶ АКТИВИРОВАТЬ ФИНАЛЬНЫЙ ПРОТОКОЛ
+          </motion.button>
+          <div className="text-base tracking-widest" style={{color:'rgba(0,255,65,.2)'}}>
+            — ВНИМАНИЕ: ДЕЙСТВИЕ НЕОБРАТИМО —
+          </div>
+        </motion.div>
+      )}
+
+      {phase==='countdown'&&(
+        <motion.div className="flex flex-col items-center gap-5"
+          initial={{opacity:0}} animate={{opacity:1}}>
+          <div className="text-lg tracking-[.4em]" style={{color:'rgba(255,49,49,.72)'}}>
+            ФИНАЛЬНАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ ЗАПУЩЕНА
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.div key={count} className="font-bold"
+              style={{fontSize:'clamp(8rem,25vw,18rem)',...R,
+                fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}
+              initial={{scale:1.5,opacity:0}} animate={{scale:1,opacity:1}}
+              exit={{scale:.65,opacity:0}} transition={{duration:.28}}>
+              {String(count).padStart(2,'0')}
+            </motion.div>
+          </AnimatePresence>
+          <div className="flex gap-2 mt-2">
+            {Array.from({length:5},(_,i)=>(
+              <motion.div key={i} className="w-4 h-8 rounded-sm"
+                style={{backgroundColor:i<5-count?'#FF3131':'rgba(255,49,49,.15)'}}
+                animate={i<5-count?{opacity:[.7,1,.7]}:{}} transition={{duration:.5,repeat:Infinity}}/>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {phase==='card'&&(
+        <>
+          <Confetti/>
+          <motion.div className="flex flex-col items-center gap-6 z-10"
+            initial={{opacity:0}} animate={{opacity:1}} transition={{duration:.7}}>
+            <motion.div className="text-base tracking-[.35em] text-center"
+              style={{color:'#00FF41',textShadow:'0 0 9px rgba(0,255,65,.75)'}}
+              animate={{opacity:[.6,1,.6]}} transition={{duration:2,repeat:Infinity}}>
+              ✓ АНАЛИЗ ЗАВЕРШЁН — ИДЕАЛЬНАЯ ЖЕНЩИНА ОБНАРУЖЕНА
+            </motion.div>
+            <AccessCard/>
+            <motion.div className="max-w-xl text-center space-y-3 mt-2"
+              initial={{opacity:0,y:22}} animate={{opacity:1,y:0}} transition={{delay:1.3,duration:.65}}>
+              <div className="text-base leading-relaxed"
+                style={{color:'#00FF41',textShadow:'0 0 8px rgba(0,255,65,.5)'}}>
+                Система завершила анализ. Идеальная женщина обнаружена.
+              </div>
+              <motion.div className="text-xl font-bold mt-2 tracking-wide"
+                style={{color:'#00FF41',textShadow:'0 0 16px rgba(0,255,65,.95)'}}
+                animate={{opacity:[.8,1,.8]}} transition={{duration:1.5,repeat:Infinity}}>
+                С Днём Рождения, любимая! 🎂
+              </motion.div>
+              <div className="text-base mt-1" style={{color:'rgba(0,255,65,.72)'}}>
+                Оглянись — цветы, практики и я уже здесь 🌸🎁
+              </div>
+            </motion.div>
+            <motion.div className="text-sm tracking-widest mt-1 select-none"
+              style={{color:'rgba(0,255,65,.18)'}}
+              animate={{opacity:[.18,.45,.18]}} transition={{duration:3,repeat:Infinity}}>
+              01001000 01000001 01010000 01010000 01011001 00100000 01000010 01001001 01010010 01010100 01001000 01000100 01000001 01011001
+            </motion.div>
+          </motion.div>
+        </>
+      )}
+
+      <div className="fixed bottom-5 left-0 right-0 flex justify-between px-8 text-sm"
+        style={{color:'rgba(0,255,65,.15)'}}>
+        <span>МОДУЛЬ: ФИНАЛЬНЫЙ ПРОТОКОЛ</span>
+        <span>ANGEL 24 // КОНЕЦ ПЕРЕДАЧИ</span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   КОРНЕВОЕ ПРИЛОЖЕНИЕ
+══════════════════════════════════════════════ */
+function App(){
+  const [screen,setScreen]=useState('terminal');
+  const [glitching,setGlitching]=useState(false);
+  const advance=useCallback(next=>{
+    setGlitching(true);
+    setTimeout(()=>{setScreen(next);setGlitching(false);},520);
+  },[]);
+  return(
+    <div className="relative w-screen h-screen overflow-hidden"
+      style={{background:'#050505',fontFamily:"'JetBrains Mono',monospace"}}>
+      <GlobalEffects glitching={glitching}/>
+      <AnimatePresence mode="wait">
+        {screen==='terminal'&&<Terminal    key="terminal"  onSuccess={()=>advance('dossier')}/>}
+        {screen==='dossier' &&<Dossier     key="dossier"   onNext={()=>advance('memory')}/>}
+        {screen==='memory'  &&<MemoryGame  key="memory"    onNext={()=>advance('wishes')}/>}
+        {screen==='wishes'  &&<WishesGrid  key="wishes"    onNext={()=>advance('worldmap')}/>}
+        {screen==='worldmap'&&<WorldMap    key="worldmap"  onNext={()=>advance('finale')}/>}
+        {screen==='finale'  &&<GrandFinale key="finale"/>}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
